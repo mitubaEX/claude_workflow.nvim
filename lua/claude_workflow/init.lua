@@ -24,12 +24,13 @@ M.notify = notify
 
 --- Optional setup. Accepts defaults that are merged into every `open` call,
 --- so the user commands (`:Claude`, `:ClaudeContinue`, ...) pick them up too.
---- @param opts table|nil { env = { KEY = "val" }, extra_args = { "--flag" } }
+--- @param opts table|nil { env = { KEY = "val" }, extra_args = { "--flag" }, cmd_prefix = "direnv exec ." }
 function M.setup(opts)
 	opts = opts or {}
 	term.set_defaults({
 		env = opts.env,
 		extra_args = opts.extra_args,
+		cmd_prefix = opts.cmd_prefix,
 	})
 end
 

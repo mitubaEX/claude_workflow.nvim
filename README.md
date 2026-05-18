@@ -24,6 +24,9 @@ claude has gone idle while you were elsewhere.
     env = { HOGE = "1" },
     -- extra args appended to the claude command for every session
     extra_args = { "--dangerously-skip-permissions" },
+    -- string prepended verbatim before `claude` (shell features work)
+    -- e.g. -> `direnv exec . claude ...`
+    cmd_prefix = "direnv exec .",
   },
 }
 ```
@@ -58,6 +61,7 @@ claude.open({
   no_split = false,              -- reuse current window instead of vsplit
   env = { HOGE = "1" },          -- env vars merged into the claude process
   extra_args = { "--foo" },      -- extra CLI args appended to the claude cmd
+  cmd_prefix = "direnv exec .",  -- string prepended verbatim before `claude`
 })
 
 claude.toggle()

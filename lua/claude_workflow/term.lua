@@ -25,7 +25,11 @@ local function current_branch()
 end
 
 local function build_cmd(opts)
-	local parts = { "claude" }
+	local parts = {}
+	if opts.cmd_prefix and opts.cmd_prefix ~= "" then
+		table.insert(parts, opts.cmd_prefix)
+	end
+	table.insert(parts, "claude")
 	if opts.continue then
 		table.insert(parts, "-c")
 	end
@@ -80,13 +84,16 @@ local function open_split()
 end
 
 --- Open (or focus) a claude terminal for the current cwd.
---- @param opts table|nil { prompt, continue, resume, from_pr, append_system_prompt, name, no_split, env, extra_args }
+--- @param opts table|nil { prompt, continue, resume, from_pr, append_system_prompt, name, no_split, env, extra_args, cmd_prefix }
 --- `no_split = true` reuses the current window instead of opening a vsplit
 --- (used by the worktree-tab flow where the new tab already exists for claude).
 --- `env` is a table of env vars (e.g. `{ HOGE = "1" }`) passed to jobstart and
 --- merged into the child process' environment.
 --- `extra_args` is a list of additional CLI args appended to the claude command
 --- (e.g. `{ "--dangerously-skip-permissions" }`).
+--- `cmd_prefix` is a string prepended verbatim before `claude` (e.g.
+--- `"direnv exec ."` -> `direnv exec . claude ...`). Shell features work because
+--- the whole command line is run via `&shell -c`.
 function M.open(opts)
 	local user_opts = opts or {}
 	opts = vim.tbl_extend("force", {}, defaults, user_opts)
