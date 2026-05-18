@@ -7,6 +7,15 @@ local M = {}
 -- cwd -> { buf = number, job_id = number }
 local terms = {}
 
+-- Defaults injected by setup() — merged into every M.open(opts) call so the
+-- user commands (`:Claude`, etc.) pick them up without per-call wiring.
+local defaults = {}
+
+--- Set default opts merged into every M.open call. Intended for setup().
+function M.set_defaults(opts)
+	defaults = opts or {}
+end
+
 local function current_branch()
 	local out = vim.fn.systemlist("git rev-parse --abbrev-ref HEAD")
 	if vim.v.shell_error ~= 0 or not out[1] then
@@ -42,6 +51,11 @@ local function build_cmd(opts)
 		table.insert(parts, "-n")
 		table.insert(parts, vim.fn.shellescape(opts.name))
 	end
+	if opts.extra_args then
+		for _, arg in ipairs(opts.extra_args) do
+			table.insert(parts, vim.fn.shellescape(arg))
+		end
+	end
 	if opts.prompt and opts.prompt ~= "" then
 		table.insert(parts, vim.fn.shellescape(opts.prompt))
 	end
@@ -66,11 +80,22 @@ local function open_split()
 end
 
 --- Open (or focus) a claude terminal for the current cwd.
---- @param opts table|nil { prompt, continue, resume, from_pr, append_system_prompt, name, no_split }
+--- @param opts table|nil { prompt, continue, resume, from_pr, append_system_prompt, name, no_split, env, extra_args }
 --- `no_split = true` reuses the current window instead of opening a vsplit
 --- (used by the worktree-tab flow where the new tab already exists for claude).
+--- `env` is a table of env vars (e.g. `{ HOGE = "1" }`) passed to jobstart and
+--- merged into the child process' environment.
+--- `extra_args` is a list of additional CLI args appended to the claude command
+--- (e.g. `{ "--dangerously-skip-permissions" }`).
 function M.open(opts)
-	opts = opts or {}
+	local user_opts = opts or {}
+	opts = vim.tbl_extend("force", {}, defaults, user_opts)
+	-- env is the one option where merging defaults with the per-call value
+	-- makes sense; for list-shaped opts (extra_args) the per-call value just
+	-- overrides, to avoid surprising index-wise mixing.
+	if defaults.env or user_opts.env then
+		opts.env = vim.tbl_extend("force", {}, defaults.env or {}, user_opts.env or {})
+	end
 	local cwd = vim.fn.getcwd()
 	local entry = find_existing(cwd)
 
@@ -98,7 +123,11 @@ function M.open(opts)
 	-- Need a fresh buffer for the terminal; the split (or tab) inherited the previous one.
 	vim.cmd("enew")
 	local cmd = build_cmd(opts)
-	local job_id = vim.fn.jobstart(cmd, { cwd = cwd, term = true })
+	local job_opts = { cwd = cwd, term = true }
+	if opts.env and next(opts.env) then
+		job_opts.env = opts.env
+	end
+	local job_id = vim.fn.jobstart(cmd, job_opts)
 	if job_id <= 0 then
 		vim.api.nvim_err_writeln("Failed to start claude (job_id=" .. job_id .. ")")
 		return

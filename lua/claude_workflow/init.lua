@@ -22,9 +22,15 @@ M.clear_pending = notify.clear
 M.term = term
 M.notify = notify
 
---- Optional setup. Currently a no-op — all behavior is opt-in via the
---- top-level functions and `plugin/claude_workflow.lua` registers user
---- commands automatically. Reserved for future configuration knobs.
-function M.setup(_opts) end
+--- Optional setup. Accepts defaults that are merged into every `open` call,
+--- so the user commands (`:Claude`, `:ClaudeContinue`, ...) pick them up too.
+--- @param opts table|nil { env = { KEY = "val" }, extra_args = { "--flag" } }
+function M.setup(opts)
+	opts = opts or {}
+	term.set_defaults({
+		env = opts.env,
+		extra_args = opts.extra_args,
+	})
+end
 
 return M

@@ -19,7 +19,12 @@ claude has gone idle while you were elsewhere.
   event = "VeryLazy",
   -- or: cmd = { "Claude", "ClaudeContinue", "ClaudeResume", "ClaudeFromPR",
   --             "ClaudeToggle", "ClaudeKill", "ClaudeSend" },
-  -- opts = {},
+  opts = {
+    -- env vars merged into every claude process (e.g. HOGE=1 claude)
+    env = { HOGE = "1" },
+    -- extra args appended to the claude command for every session
+    extra_args = { "--dangerously-skip-permissions" },
+  },
 }
 ```
 
@@ -51,6 +56,8 @@ claude.open({
   append_system_prompt = "...",  -- --append-system-prompt
   name = "feat-x",               -- -n <name>
   no_split = false,              -- reuse current window instead of vsplit
+  env = { HOGE = "1" },          -- env vars merged into the claude process
+  extra_args = { "--foo" },      -- extra CLI args appended to the claude cmd
 })
 
 claude.toggle()
