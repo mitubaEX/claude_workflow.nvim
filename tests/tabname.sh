@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Coverage for claude_workflow.tabname:
-# - API surface + osc() byte layout (OSC 0 then OSC 2, BEL-terminated)
+# - API surface + apply() drives Neovim's native 'title'/'titlestring'
 # - compose() default markers (running/attention/none) and custom formatter
 # - setup(false) disables and update() stays a harmless no-op
 # - setup() registers the User ClaudeWorkflowPending hook and tolerates it firing
@@ -8,10 +8,11 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 # 1. API exists, including the term.has() accessor it depends on.
-run_nv -c 'lua local m = require("claude_workflow.tabname"); for _, fn in ipairs({"osc","compose","current","update","restore","setup"}) do if type(m[fn]) ~= "function" then print("missing: " .. fn); vim.cmd("cquit") end end; if type(require("claude_workflow").has) ~= "function" then print("missing: claude_workflow.has"); vim.cmd("cquit") end' -c qa
+run_nv -c 'lua local m = require("claude_workflow.tabname"); for _, fn in ipairs({"apply","compose","current","update","restore","setup"}) do if type(m[fn]) ~= "function" then print("missing: " .. fn); vim.cmd("cquit") end end; if type(require("claude_workflow").has) ~= "function" then print("missing: claude_workflow.has"); vim.cmd("cquit") end' -c qa
 
-# 2. osc() is exactly OSC 0 (icon+title) then OSC 2 (title), each BEL-terminated.
-run_nv -c 'lua local m = require("claude_workflow.tabname"); local esc, bel = string.char(27), string.char(7); local want = esc .. "]0;X" .. bel .. esc .. "]2;X" .. bel; local got = m.osc("X"); if got ~= want then print("osc mismatch: " .. vim.inspect(got)); vim.cmd("cquit") end' -c qa
+# 2. apply() turns 'title' on and sets 'titlestring'; a literal % is escaped to %%
+#    because 'titlestring' is evaluated like 'statusline'.
+run_nv -c 'lua local m = require("claude_workflow.tabname"); m.apply("X"); if vim.o.title ~= true then print("title not enabled"); vim.cmd("cquit") end; if vim.o.titlestring ~= "X" then print("titlestring: " .. vim.inspect(vim.o.titlestring)); vim.cmd("cquit") end; m.apply("a%b"); if vim.o.titlestring ~= "a%%b" then print("percent not escaped: " .. vim.inspect(vim.o.titlestring)); vim.cmd("cquit") end' -c qa
 
 # 3. compose() default markers: running -> 🤖, pending -> 🔔, neither -> bare branch.
 run_nv -c 'lua local m = require("claude_workflow.tabname"); m.setup(true); local cases = {{{branch="br",running=true},"🤖 br"},{{branch="br",running=true,pending=true},"🔔 br"},{{branch="br"},"br"}}; for _, c in ipairs(cases) do local got = m.compose(c[1]); if got ~= c[2] then print("compose -> " .. tostring(got)); vim.cmd("cquit") end end' -c qa
