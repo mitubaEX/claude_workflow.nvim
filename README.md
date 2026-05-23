@@ -27,6 +27,9 @@ claude has gone idle while you were elsewhere.
     -- string prepended verbatim before `claude` (shell features work)
     -- e.g. -> `direnv exec . claude ...`
     cmd_prefix = "direnv exec .",
+    -- terminal tab/window title reflecting the cwd's claude session.
+    -- enabled by default; set `tabname = false` to turn it off. See below.
+    tabname = true,
   },
 }
 ```
@@ -101,6 +104,54 @@ require("bufferline").setup({
   },
 })
 ```
+
+## Terminal tab/window title
+
+`setup()` makes the outer terminal's tab/window title track the focused
+window's cwd, via OSC 0 + OSC 2:
+
+| state                                   | title           |
+| --------------------------------------- | --------------- |
+| claude session live for the cwd         | `🤖 <branch>`   |
+| that session is idle / needs attention  | `🔔 <branch>`   |
+| no claude session for the cwd           | `<branch>`      |
+
+`<branch>` is the cwd's git branch (falling back to its directory name).
+The `🔔` state mirrors `pending(cwd)` and updates the moment it flips — no
+polling — because `notify` fires a `User ClaudeWorkflowPending` autocmd
+(see below). The title is written only when it changes, never under
+headless nvim, and is reset to the bare directory name on exit.
+
+It is **on by default**. Configure it through the `tabname` option:
+
+```lua
+require("claude_workflow").setup({
+  -- tabname = true,                       -- default
+  -- tabname = false,                      -- disable entirely
+  -- tabname = { running = "▶", attention = "!" },  -- override the markers
+  -- full custom formatter; return a string, or nil to leave the title alone:
+  tabname = function(info)
+    -- info = { cwd, branch, running = bool, pending = bool }
+    return (info.pending and "! " or info.running and "* " or "") .. info.branch
+  end,
+})
+```
+
+### `User ClaudeWorkflowPending`
+
+Whenever a session's pending flag flips, the plugin fires:
+
+```lua
+vim.api.nvim_create_autocmd("User", {
+  pattern = "ClaudeWorkflowPending",
+  callback = function(ev)
+    -- ev.data = { cwd = "<cwd>", pending = true|false }
+  end,
+})
+```
+
+This is the same hook the tab-title feature uses; status lines /
+bufferlines can react to it instead of polling `pending(cwd)`.
 
 ## Worktree integration
 
