@@ -78,6 +78,14 @@ local function find_existing(cwd)
 	return entry
 end
 
+--- Whether a live claude terminal exists for `cwd` (defaults to the current cwd).
+--- Intended for status line / tab title integrations.
+--- @param cwd string|nil
+--- @return boolean
+function M.has(cwd)
+	return find_existing(cwd or vim.fn.getcwd()) ~= nil
+end
+
 local function open_split()
 	vim.cmd("botright vsplit")
 	vim.cmd("vertical resize 80")

@@ -34,6 +34,12 @@ local function set_pending(cwd, val)
 	entry.pending = val
 	vim.schedule(function()
 		pcall(vim.cmd, "redrawtabline")
+		-- Public extension point: the tab-title integration (and any other
+		-- consumer) reacts to this instead of polling pending().
+		pcall(vim.api.nvim_exec_autocmds, "User", {
+			pattern = "ClaudeWorkflowPending",
+			data = { cwd = cwd, pending = val },
+		})
 	end)
 end
 
@@ -106,7 +112,11 @@ vim.api.nvim_create_autocmd("TabEnter", {
 	group = augroup,
 	callback = function()
 		for cwd, entry in pairs(state) do
-			if entry.buf and vim.api.nvim_buf_is_valid(entry.buf) and buf_visible_in_current_tab(entry.buf) then
+			if
+				entry.buf
+				and vim.api.nvim_buf_is_valid(entry.buf)
+				and buf_visible_in_current_tab(entry.buf)
+			then
 				set_pending(cwd, false)
 			end
 		end
