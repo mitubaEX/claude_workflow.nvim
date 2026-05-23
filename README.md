@@ -108,7 +108,7 @@ require("bufferline").setup({
 ## Terminal tab/window title
 
 `setup()` makes the outer terminal's tab/window title track the focused
-window's cwd, via OSC 0 + OSC 2:
+window's cwd:
 
 | state                                   | title           |
 | --------------------------------------- | --------------- |
@@ -121,6 +121,13 @@ The `🔔` state mirrors `pending(cwd)` and updates the moment it flips — no
 polling — because `notify` fires a `User ClaudeWorkflowPending` autocmd
 (see below). The title is written only when it changes, never under
 headless nvim, and is reset to the bare directory name on exit.
+
+The title is driven through Neovim's native `'title'`/`'titlestring'`
+options, so Neovim's TUI emits the terminfo-correct title sequence (and
+handles tmux passthrough and exit-restore). Writing the OSC escape
+directly is not an option: Neovim runs its TUI in a separate process, so
+the process running this Lua has no controlling terminal — `/dev/tty` is
+not writable from it.
 
 It is **on by default**. Configure it through the `tabname` option:
 

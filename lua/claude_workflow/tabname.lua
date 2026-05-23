@@ -1,5 +1,4 @@
--- Reflect the cwd's claude session in the *outer* terminal's tab/window title
--- via OSC 0 + OSC 2.
+-- Reflect the cwd's claude session in the *outer* terminal's tab/window title.
 --
 -- The plugin's unit is the cwd (typically a git worktree), so the title tracks
 -- the focused window's cwd:
@@ -7,9 +6,13 @@
 --   🔔 <branch>   that session has gone idle / needs attention (notify.pending)
 --   <branch>      no claude session for this cwd
 --
--- We emit BOTH OSC 0 (icon name + window title) and OSC 2 (window title): some
--- terminals map OSC 0/1 to the tab label and OSC 2 to the window title, so
--- sending both maximizes how many places pick the name up.
+-- We set the title through Neovim's native 'title'/'titlestring' options rather
+-- than writing the OSC escape ourselves. Neovim runs its TUI in a *separate*
+-- process; the core process (where this Lua runs) has no controlling terminal,
+-- so a raw `io.open("/dev/tty", "w")` fails with "Device not configured" and
+-- never reaches the terminal. The TUI process, which does own the terminal,
+-- emits the proper title sequence for us (terminfo-correct, tmux-aware, and
+-- restored on exit) the moment 'titlestring' changes.
 --
 -- Enabled by default; configured through `setup({ tabname = ... })`:
 --   tabname = false                      -- disable
@@ -23,18 +26,13 @@ local M = {}
 M.enabled = true
 M.config = { running = "🤖", attention = "🔔", format = nil }
 
--- OSC string terminator. BEL (\7) is the most widely supported across
--- terminals and tmux; ST (ESC \) would also work.
-local ESC = "\27"
-local BEL = "\7"
-
---- Build the raw OSC 0 + OSC 2 byte string that sets the terminal's icon name +
---- window title (OSC 0) and window title (OSC 2) to `text`. Pure (no I/O).
---- @param text string|nil
---- @return string
-function M.osc(text)
-	text = tostring(text or "")
-	return ESC .. "]0;" .. text .. BEL .. ESC .. "]2;" .. text .. BEL
+--- Push `title` to the terminal via Neovim's native title machinery. 'title'
+--- must be on for Neovim to drive the title at all; 'titlestring' is evaluated
+--- like 'statusline', so a literal % in a branch name is escaped to %%.
+--- @param title string
+function M.apply(title)
+	vim.o.title = true
+	vim.o.titlestring = (tostring(title):gsub("%%", "%%%%"))
 end
 
 --- Compose the title from session info, honoring a custom formatter.
@@ -98,24 +96,17 @@ function M.current()
 	}
 end
 
--- Only write to a real terminal: skip headless nvim (tests, `claude -p`
--- subprocesses) where no UI is attached and there is nothing to title.
+-- Only drive the title for a real terminal: skip headless nvim (tests,
+-- `claude -p` subprocesses) where no UI is attached and there is nothing to
+-- title.
 local function can_emit()
 	return M.enabled and #vim.api.nvim_list_uis() > 0
-end
-
-local function write_raw(s)
-	local ok, tty = pcall(io.open, "/dev/tty", "w")
-	if ok and tty then
-		tty:write(s)
-		tty:close()
-	end
 end
 
 local last_written
 
 --- Recompute the title and emit it only when it changed (so the User-event /
---- autocmd churn doesn't spam the terminal).
+--- autocmd churn doesn't churn the title).
 function M.update()
 	if not can_emit() then
 		return
@@ -125,7 +116,7 @@ function M.update()
 		return
 	end
 	last_written = title
-	write_raw(M.osc(title))
+	M.apply(title)
 end
 
 --- Best-effort restore on exit: drop the marker back to the bare dir name. The
@@ -134,7 +125,7 @@ function M.restore()
 	if not can_emit() then
 		return
 	end
-	write_raw(M.osc(vim.fn.fnamemodify(vim.fn.getcwd(), ":t")))
+	M.apply(vim.fn.fnamemodify(vim.fn.getcwd(), ":t"))
 end
 
 --- @param opts boolean|table|function|nil  see module header. nil -> enabled.
