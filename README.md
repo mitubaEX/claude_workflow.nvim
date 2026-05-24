@@ -72,6 +72,7 @@ claude.kill()
 claude.send("hello")
 
 -- Notification helpers (for status line integrations)
+claude.busy(vim.fn.getcwd())       -- bool: claude is actively streaming output
 claude.pending(vim.fn.getcwd())    -- bool: idle output waiting to be read
 claude.clear_pending(cwd)          -- mark as read
 ```
@@ -81,6 +82,11 @@ buffers, etc.) can pattern-match on this scheme to single out claude
 terminals.
 
 ## Status line / bufferline integration
+
+`claude.busy(cwd)` is `true` while the cwd's claude is actively streaming
+output (generation/spinner running) and flips back to `false` once the
+output has been silent for `IDLE_MS` (1500ms). Use it to show a
+"working" indicator regardless of whether the terminal is visible.
 
 `claude.pending(cwd)` flips to `true` `IDLE_MS` (1500ms) after the
 terminal stops streaming output, **if** the buffer is not currently
@@ -112,15 +118,18 @@ window's cwd:
 
 | state                                   | title           |
 | --------------------------------------- | --------------- |
-| claude session live for the cwd         | `🤖 <branch>`   |
+| claude is actively working for the cwd  | `⚙️ <branch>`   |
 | that session is idle / needs attention  | `🔔 <branch>`   |
+| claude session live but idle            | `🤖 <branch>`   |
 | no claude session for the cwd           | `<branch>`      |
 
 `<branch>` is the cwd's git branch (falling back to its directory name).
-The `🔔` state mirrors `pending(cwd)` and updates the moment it flips — no
-polling — because `notify` fires a `User ClaudeWorkflowPending` autocmd
-(see below). The title is written only when it changes, never under
-headless nvim, and is reset to the bare directory name on exit.
+The `⚙️` (working) and `🔔` (attention) states mirror `busy(cwd)` /
+`pending(cwd)` and update the moment they flip — no polling — because
+`notify` fires `User ClaudeWorkflowBusy` / `User ClaudeWorkflowPending`
+autocmds (see below). "Needs attention" outranks "working". The title is
+written only when it changes, never under headless nvim, and is reset to
+the bare directory name on exit.
 
 The title is driven through Neovim's native `'title'`/`'titlestring'`
 options, so Neovim's TUI emits the terminfo-correct title sequence (and
@@ -135,30 +144,35 @@ It is **on by default**. Configure it through the `tabname` option:
 require("claude_workflow").setup({
   -- tabname = true,                       -- default
   -- tabname = false,                      -- disable entirely
-  -- tabname = { running = "▶", attention = "!" },  -- override the markers
+  -- override the markers (any subset; the rest keep their defaults):
+  -- tabname = { running = "▶", working = "…", attention = "!" },
   -- full custom formatter; return a string, or nil to leave the title alone:
   tabname = function(info)
-    -- info = { cwd, branch, running = bool, pending = bool }
-    return (info.pending and "! " or info.running and "* " or "") .. info.branch
+    -- info = { cwd, branch, running = bool, working = bool, pending = bool }
+    return (info.pending and "! " or info.working and "~ " or info.running and "* " or "")
+      .. info.branch
   end,
 })
 ```
 
-### `User ClaudeWorkflowPending`
+### `User ClaudeWorkflowBusy` / `User ClaudeWorkflowPending`
 
-Whenever a session's pending flag flips, the plugin fires:
+Whenever a session's busy or pending flag flips, the plugin fires the
+matching autocmd:
 
 ```lua
 vim.api.nvim_create_autocmd("User", {
-  pattern = "ClaudeWorkflowPending",
+  pattern = { "ClaudeWorkflowBusy", "ClaudeWorkflowPending" },
   callback = function(ev)
-    -- ev.data = { cwd = "<cwd>", pending = true|false }
+    -- ClaudeWorkflowBusy:    ev.data = { cwd = "<cwd>", busy = true|false }
+    -- ClaudeWorkflowPending: ev.data = { cwd = "<cwd>", pending = true|false }
   end,
 })
 ```
 
-This is the same hook the tab-title feature uses; status lines /
-bufferlines can react to it instead of polling `pending(cwd)`.
+These are the same hooks the tab-title feature uses; status lines /
+bufferlines can react to them instead of polling `busy(cwd)` /
+`pending(cwd)`.
 
 ## Worktree integration
 
