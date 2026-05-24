@@ -17,6 +17,7 @@ M.has = term.has
 
 -- Notification queries (intended for status line / bufferline integrations).
 M.pending = notify.pending
+M.busy = notify.busy
 M.clear_pending = notify.clear
 
 -- Submodules are exported for callers that want the raw object (e.g. to call
@@ -32,8 +33,9 @@ M.tabname = tabname
 ---   extra_args = { "--flag" },      -- appended to every claude command
 ---   cmd_prefix = "direnv exec .",   -- prepended verbatim before `claude`
 ---   tabname = true,                 -- terminal tab/window title (default on);
----                                   --   false to disable, table to override
----                                   --   markers, or a function(info) formatter
+---                                   --   reflects running (🤖) / working (⚙️) /
+---                                   --   attention (🔔). false to disable, table
+---                                   --   to override markers, or function(info)
 --- }
 function M.setup(opts)
 	opts = opts or {}

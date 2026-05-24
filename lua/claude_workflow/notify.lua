@@ -1,11 +1,18 @@
--- Per-cwd "needs attention" flag for the claude :terminal in that cwd.
+-- Per-cwd activity flags for the claude :terminal in that cwd.
 -- Bufferline's name_formatter (or any other UI) can call `pending(cwd)` and
 -- prepend a marker to the matching tab, so the user can see which worktree's
 -- claude has gone idle while they were elsewhere.
+--
+-- Two flags, both driven by the same output-activity signal:
+--   busy(cwd)     true while claude is actively streaming output (the buffer
+--                 keeps changing — generation/spinner running), false once the
+--                 output has been silent for IDLE_MS.
+--   pending(cwd)  true once the output settles *and* the buffer is hidden, i.e.
+--                 claude finished while you were elsewhere and you should look.
 
 local M = {}
 
--- cwd -> { pending = bool, timer = uv_timer, buf = number }
+-- cwd -> { pending = bool, busy = bool, timer = uv_timer, buf = number }
 local state = {}
 
 -- Output is considered "settled" after this many ms of silence — that's when
@@ -43,9 +50,36 @@ local function set_pending(cwd, val)
 	end)
 end
 
+-- Flip the busy flag, notifying only on a real change (on_lines fires on every
+-- streamed line, so without this guard the User event would spam). Fired as its
+-- own event so the tab-title integration can react the moment generation
+-- starts/stops without polling.
+local function set_busy(cwd, val)
+	local entry = state[cwd]
+	if not entry then
+		return
+	end
+	if entry.busy == val then
+		return
+	end
+	entry.busy = val
+	vim.schedule(function()
+		pcall(vim.cmd, "redrawtabline")
+		pcall(vim.api.nvim_exec_autocmds, "User", {
+			pattern = "ClaudeWorkflowBusy",
+			data = { cwd = cwd, busy = val },
+		})
+	end)
+end
+
 function M.pending(cwd)
 	local entry = state[cwd]
 	return entry and entry.pending or false
+end
+
+function M.busy(cwd)
+	local entry = state[cwd]
+	return entry and entry.busy or false
 end
 
 function M.clear(cwd)
@@ -65,7 +99,7 @@ function M.watch(buf, cwd)
 	-- and gets recreated under the same cwd key).
 	close_timer(state[cwd])
 
-	local entry = { pending = false, buf = buf, timer = vim.loop.new_timer() }
+	local entry = { pending = false, busy = false, buf = buf, timer = vim.loop.new_timer() }
 	state[cwd] = entry
 
 	vim.api.nvim_buf_attach(buf, false, {
@@ -73,6 +107,10 @@ function M.watch(buf, cwd)
 			if not entry.timer then
 				return
 			end
+			-- Output is moving -> claude is working. (Setting a table field is
+			-- safe in the on_lines fast-callback; set_busy only defers the API
+			-- calls via vim.schedule.)
+			set_busy(cwd, true)
 			entry.timer:stop()
 			entry.timer:start(
 				IDLE_MS,
@@ -81,6 +119,8 @@ function M.watch(buf, cwd)
 					if not vim.api.nvim_buf_is_valid(buf) then
 						return
 					end
+					-- Output has been silent for IDLE_MS: generation settled.
+					set_busy(cwd, false)
 					if buf_visible_in_current_tab(buf) then
 						return
 					end

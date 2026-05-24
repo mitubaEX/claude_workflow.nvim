@@ -2,8 +2,9 @@
 --
 -- The plugin's unit is the cwd (typically a git worktree), so the title tracks
 -- the focused window's cwd:
---   🤖 <branch>   a claude session is live for this cwd
+--   ⚙️ <branch>   claude is actively working for this cwd (notify.busy)
 --   🔔 <branch>   that session has gone idle / needs attention (notify.pending)
+--   🤖 <branch>   a claude session is live but idle for this cwd
 --   <branch>      no claude session for this cwd
 --
 -- We set the title through Neovim's native 'title'/'titlestring' options rather
@@ -16,15 +17,15 @@
 --
 -- Enabled by default; configured through `setup({ tabname = ... })`:
 --   tabname = false                      -- disable
---   tabname = true                       -- defaults (🤖 / 🔔)
---   tabname = { running = "▶", attention = "!" }  -- override markers
+--   tabname = true                       -- defaults (🤖 / ⚙️ / 🔔)
+--   tabname = { running = "▶", working = "…", attention = "!" }  -- override markers
 --   tabname = function(info) ... end     -- full custom formatter, may return nil
--- `info` passed to a formatter is { cwd, branch, running, pending }.
+-- `info` passed to a formatter is { cwd, branch, running, working, pending }.
 
 local M = {}
 
 M.enabled = true
-M.config = { running = "🤖", attention = "🔔", format = nil }
+M.config = { running = "🤖", working = "⚙️", attention = "🔔", format = nil }
 
 --- Push `title` to the terminal via Neovim's native title machinery. 'title'
 --- must be on for Neovim to drive the title at all; 'titlestring' is evaluated
@@ -36,7 +37,9 @@ function M.apply(title)
 end
 
 --- Compose the title from session info, honoring a custom formatter.
---- @param info table { cwd, branch, running, pending }
+--- "needs attention" outranks "working" (both can't really be true at once —
+--- pending only sets after output settles — but ordering keeps it deterministic).
+--- @param info table { cwd, branch, running, working, pending }
 --- @return string|nil
 function M.compose(info)
 	if M.config.format then
@@ -44,6 +47,8 @@ function M.compose(info)
 	end
 	if info.pending then
 		return M.config.attention .. " " .. info.branch
+	elseif info.working then
+		return M.config.working .. " " .. info.branch
 	elseif info.running then
 		return M.config.running .. " " .. info.branch
 	end
@@ -83,8 +88,13 @@ local function is_pending(cwd)
 	return ok and notify.pending(cwd) or false
 end
 
+local function is_busy(cwd)
+	local ok, notify = pcall(require, "claude_workflow.notify")
+	return ok and notify.busy(cwd) or false
+end
+
 --- Session info for the focused window's cwd.
---- @return table { cwd, branch, running, pending }
+--- @return table { cwd, branch, running, working, pending }
 function M.current()
 	local cwd = vim.fn.getcwd()
 	local running = has_session(cwd)
@@ -92,6 +102,7 @@ function M.current()
 		cwd = cwd,
 		branch = M.branch_for(cwd),
 		running = running,
+		working = running and is_busy(cwd) or false,
 		pending = running and is_pending(cwd) or false,
 	}
 end
@@ -144,6 +155,7 @@ function M.setup(opts)
 	end
 	M.config = {
 		running = cfg.running or "🤖",
+		working = cfg.working or "⚙️",
 		attention = cfg.attention or "🔔",
 		format = cfg.format,
 	}
@@ -155,10 +167,10 @@ function M.setup(opts)
 		{ "VimEnter", "BufEnter", "WinEnter", "TabEnter", "DirChanged", "TermOpen", "TermClose" },
 		{ group = group, callback = M.update }
 	)
-	-- notify fires this when its idle flag flips, so 🤖→🔔 needs no polling.
+	-- notify fires these as its flags flip, so 🤖→⚙️→🔔 needs no polling.
 	vim.api.nvim_create_autocmd("User", {
 		group = group,
-		pattern = "ClaudeWorkflowPending",
+		pattern = { "ClaudeWorkflowPending", "ClaudeWorkflowBusy" },
 		callback = M.update,
 	})
 	vim.api.nvim_create_autocmd("VimLeavePre", {
