@@ -116,20 +116,26 @@ require("bufferline").setup({
 `setup()` makes the outer terminal's tab/window title track the focused
 window's cwd:
 
-| state                                   | title           |
-| --------------------------------------- | --------------- |
-| claude is actively working for the cwd  | `⚙️ <branch>`   |
-| that session is idle / needs attention  | `🔔 <branch>`   |
-| claude session live but idle            | `🤖 <branch>`   |
-| no claude session for the cwd           | `<branch>`      |
+| state                                   | title                              |
+| --------------------------------------- | ---------------------------------- |
+| claude is actively working for the cwd  | `⠋ <branch>` (animated; see below) |
+| that session is idle / needs attention  | `🔔 <branch>`                      |
+| claude session live but idle            | `🤖 <branch>`                      |
+| no claude session for the cwd           | `<branch>`                         |
 
 `<branch>` is the cwd's git branch (falling back to its directory name).
-The `⚙️` (working) and `🔔` (attention) states mirror `busy(cwd)` /
-`pending(cwd)` and update the moment they flip — no polling — because
-`notify` fires `User ClaudeWorkflowBusy` / `User ClaudeWorkflowPending`
-autocmds (see below). "Needs attention" outranks "working". The title is
-written only when it changes, never under headless nvim, and is reset to
-the bare directory name on exit.
+The working / attention states mirror `busy(cwd)` / `pending(cwd)` and
+update the moment they flip — no polling — because `notify` fires `User
+ClaudeWorkflowBusy` / `User ClaudeWorkflowPending` autocmds (see below).
+"Needs attention" outranks "working". The title is written only when it
+changes, never under headless nvim, and is reset to the bare directory
+name on exit.
+
+While claude is working the marker is **animated** — by default a
+Braille dot spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, advancing every 100ms) so the tab
+shows real motion rather than a static glyph. The animation timer only
+runs while `busy(cwd)` is true and is dropped immediately when claude
+goes idle or starts needing attention.
 
 The title is driven through Neovim's native `'title'`/`'titlestring'`
 options, so Neovim's TUI emits the terminfo-correct title sequence (and
@@ -146,9 +152,17 @@ require("claude_workflow").setup({
   -- tabname = false,                      -- disable entirely
   -- override the markers (any subset; the rest keep their defaults):
   -- tabname = { running = "▶", working = "…", attention = "!" },
+  -- working is either a string (static glyph; no animation) or a list of
+  -- frames to cycle through. interval defaults to 100ms.
+  -- tabname = { working = "⚙️" },
+  -- tabname = { working = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" },
+  --             working_interval_ms = 100 },
+  -- tabname = { working = { "🌍", "🌎", "🌏" }, working_interval_ms = 200 },
   -- full custom formatter; return a string, or nil to leave the title alone:
   tabname = function(info)
-    -- info = { cwd, branch, running = bool, working = bool, pending = bool }
+    -- info = { cwd, branch, running = bool, working = bool, pending = bool, frame = int }
+    -- `frame` is the 1-based spinner index (always present; useful when you
+    -- want to drive your own animation).
     return (info.pending and "! " or info.working and "~ " or info.running and "* " or "")
       .. info.branch
   end,
