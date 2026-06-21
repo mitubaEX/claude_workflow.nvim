@@ -19,6 +19,32 @@ local state = {}
 -- we decide claude has stopped streaming and the user might want to look.
 local IDLE_MS = 1500
 
+-- claude code prints this in the spinner row only while it's actively
+-- generating (e.g. "✻ Thinking... (esc to interrupt)"). Using its presence
+-- as the busy gate keeps the tab-title spinner from churning while the user
+-- is *typing* a prompt — keystroke echo also triggers on_lines, but no
+-- "esc to interrupt" line appears in that case.
+local BUSY_MARKER = "esc to interrupt"
+-- How many trailing buffer lines to scan for BUSY_MARKER. claude's status
+-- row sits near the bottom; 20 covers the prompt box, hint row, and a few
+-- lines of slack without scanning the whole transcript on every keystroke.
+local BUSY_TAIL_LINES = 20
+
+local function buf_has_busy_marker(buf)
+	if not vim.api.nvim_buf_is_valid(buf) then
+		return false
+	end
+	local line_count = vim.api.nvim_buf_line_count(buf)
+	local start = math.max(0, line_count - BUSY_TAIL_LINES)
+	local lines = vim.api.nvim_buf_get_lines(buf, start, line_count, false)
+	for _, line in ipairs(lines) do
+		if line:lower():find(BUSY_MARKER, 1, true) then
+			return true
+		end
+	end
+	return false
+end
+
 local augroup = vim.api.nvim_create_augroup("ClaudeNotify", { clear = true })
 
 local function buf_visible_in_current_tab(buf)
@@ -102,14 +128,26 @@ function M.watch(buf, cwd)
 	local entry = { pending = false, busy = false, buf = buf, timer = vim.loop.new_timer() }
 	state[cwd] = entry
 
-	vim.api.nvim_buf_attach(buf, false, {
-		on_lines = function()
-			if not entry.timer then
+	-- on_lines is a fast-callback: API calls that read buffer state are not
+	-- safe here, so we defer the marker check to the main loop via schedule.
+	-- A pending flag (entry.check_scheduled) coalesces bursts of on_lines into
+	-- one check per tick.
+	local function schedule_busy_check()
+		if entry.check_scheduled then
+			return
+		end
+		entry.check_scheduled = true
+		vim.schedule(function()
+			entry.check_scheduled = false
+			if not entry.timer or not vim.api.nvim_buf_is_valid(buf) then
 				return
 			end
-			-- Output is moving -> claude is working. (Setting a table field is
-			-- safe in the on_lines fast-callback; set_busy only defers the API
-			-- calls via vim.schedule.)
+			-- Only flip busy=true when claude's own "esc to interrupt" hint is
+			-- on-screen: keystroke echo from the user typing a prompt also
+			-- changes the buffer, but doesn't put that marker in the tail.
+			if not buf_has_busy_marker(buf) then
+				return
+			end
 			set_busy(cwd, true)
 			entry.timer:stop()
 			entry.timer:start(
@@ -127,6 +165,15 @@ function M.watch(buf, cwd)
 					set_pending(cwd, true)
 				end)
 			)
+		end)
+	end
+
+	vim.api.nvim_buf_attach(buf, false, {
+		on_lines = function()
+			if not entry.timer then
+				return
+			end
+			schedule_busy_check()
 		end,
 		on_detach = function()
 			close_timer(entry)
