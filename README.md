@@ -188,6 +188,65 @@ These are the same hooks the tab-title feature uses; status lines /
 bufferlines can react to them instead of polling `busy(cwd)` /
 `pending(cwd)`.
 
+## herdr integration
+
+[herdr](https://github.com/ogulcancelik/herdr) detects agents by looking
+at a pane's foreground process and its screen output, so a claude running
+inside an nvim `:terminal` (a separate pty behind nvim) is invisible to
+it. This plugin closes that gap by pushing its own state to herdr's
+socket API (`herdr pane report-agent` / `release-agent`) whenever the
+busy/pending flags flip:
+
+| plugin state (aggregated over all cwds)   | reported to herdr |
+| ----------------------------------------- | ----------------- |
+| any cwd's claude is streaming output      | `working`         |
+| none busy, some cwd needs attention (🔔)  | `blocked`         |
+| sessions live but idle                    | `idle`            |
+| no claude session left / nvim exits       | released          |
+
+So the herdr sidebar shows the pane as a claude agent with live state —
+including the needs-attention rollup when claude finishes while you're
+in another window — even though herdr itself only sees `nvim`.
+
+It is **on by default** and a complete no-op outside herdr (detected via
+the `HERDR_ENV` / `HERDR_PANE_ID` variables herdr injects into its
+panes). Reports are best-effort: if the `herdr` CLI is missing or the
+call fails, nothing breaks. Configure through the `herdr` option:
+
+```lua
+require("claude_workflow").setup({
+  -- herdr = true,                             -- default
+  -- herdr = false,                            -- disable
+  -- herdr = {
+  --   source = "custom:claude-workflow-nvim", -- report source id
+  --   agent = "claude",                       -- reported agent label
+  --   bin = "/path/to/herdr",                 -- CLI override
+  --                                           -- (default: $HERDR_BIN_PATH, then $PATH)
+  -- },
+})
+```
+
+### `User ClaudeWorkflowSession`
+
+Alongside the busy/pending events, the plugin fires a session lifecycle
+event when a claude terminal starts being watched or its buffer goes
+away, and `require("claude_workflow").notify.sessions()` returns a
+snapshot of every session's flags:
+
+```lua
+vim.api.nvim_create_autocmd("User", {
+  pattern = "ClaudeWorkflowSession",
+  callback = function(ev)
+    -- ev.data = { cwd = "<cwd>", running = true|false }
+  end,
+})
+-- { { cwd = "<cwd>", busy = bool, pending = bool }, ... }
+require("claude_workflow").notify.sessions()
+```
+
+The herdr integration is built on these; they are public for any other
+aggregate consumer.
+
 ## Worktree integration
 
 This plugin doesn't depend on `git_worktree.nvim`. The per-cwd isolation
