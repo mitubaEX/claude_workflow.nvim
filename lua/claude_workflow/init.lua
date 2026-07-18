@@ -7,6 +7,7 @@ local M = {}
 local term = require("claude_workflow.term")
 local notify = require("claude_workflow.notify")
 local tabname = require("claude_workflow.tabname")
+local herdr = require("claude_workflow.herdr")
 
 -- Terminal control.
 M.open = term.open
@@ -25,6 +26,7 @@ M.clear_pending = notify.clear
 M.term = term
 M.notify = notify
 M.tabname = tabname
+M.herdr = herdr
 
 --- Optional setup. Accepts defaults that are merged into every `open` call,
 --- so the user commands (`:Claude`, `:ClaudeContinue`, ...) pick them up too.
@@ -36,6 +38,10 @@ M.tabname = tabname
 ---                                   --   reflects running (🤖) / working (⚙️) /
 ---                                   --   attention (🔔). false to disable, table
 ---                                   --   to override markers, or function(info)
+---   herdr = true,                   -- report claude state to a surrounding
+---                                   --   herdr pane (default on; no-op outside
+---                                   --   herdr). false to disable, table to
+---                                   --   override { source, agent, bin }
 --- }
 function M.setup(opts)
 	opts = opts or {}
@@ -45,6 +51,7 @@ function M.setup(opts)
 		cmd_prefix = opts.cmd_prefix,
 	})
 	tabname.setup(opts.tabname)
+	herdr.setup(opts.herdr)
 end
 
 return M

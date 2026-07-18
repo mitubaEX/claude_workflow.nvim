@@ -82,8 +82,31 @@ function M.busy(cwd)
 	return entry and entry.busy or false
 end
 
+--- Snapshot of every watched session's flags — for integrations (e.g. herdr)
+--- that need the aggregate across cwds rather than a single cwd's flag.
+--- @return table[] list of { cwd = string, busy = bool, pending = bool }
+function M.sessions()
+	local out = {}
+	for cwd, entry in pairs(state) do
+		table.insert(out, { cwd = cwd, busy = entry.busy, pending = entry.pending })
+	end
+	return out
+end
+
 function M.clear(cwd)
 	set_pending(cwd, false)
+end
+
+-- Session lifecycle event: fired when a claude terminal starts being watched
+-- (running = true) and when its buffer goes away (running = false), so
+-- integrations learn about session open/close without polling sessions().
+local function fire_session(cwd, running)
+	vim.schedule(function()
+		pcall(vim.api.nvim_exec_autocmds, "User", {
+			pattern = "ClaudeWorkflowSession",
+			data = { cwd = cwd, running = running },
+		})
+	end)
 end
 
 local function close_timer(entry)
@@ -131,11 +154,14 @@ function M.watch(buf, cwd)
 		on_detach = function()
 			close_timer(entry)
 			state[cwd] = nil
+			fire_session(cwd, false)
 			vim.schedule(function()
 				pcall(vim.cmd, "redrawtabline")
 			end)
 		end,
 	})
+
+	fire_session(cwd, true)
 
 	vim.api.nvim_create_autocmd("BufEnter", {
 		group = augroup,
